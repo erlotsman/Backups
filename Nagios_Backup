@@ -1,0 +1,52 @@
+pipeline{    
+    
+    agent any
+
+    options {
+        buildDiscarder(logRotator(numToKeepStr: '30')) 
+        timeout(time: 1, unit: 'HOURS')               
+    }
+    
+    triggers {
+        pollSCM '0 1 * * *'
+    }
+
+    stages {
+        
+        stage ('Create tar') {
+            steps {
+                script {
+                    sh label: '', 
+                    script: '''echo \'tar /usr/local/nagios directory\'
+                            set +e 
+                            tar -cvf nagios_backup.tar --exclude='var' --exclude='share' -C /usr/local/nagios .
+                            exitcode=$?
+                            if [ "$exitcode" != "1" ] && [ "$exitcode" != "0" ]; then
+                            exit $exitcode
+                            fi
+                            set -e'''    
+                }
+            }
+        }
+    
+    stage ('Upload tar to S3') {
+        steps {
+            script {
+                echo 'Upload backup to S3'
+                withAWS(credentials:'elotsman') {
+                    s3Upload( file:'nagios_backup.tar', bucket:'revolyram.nagios', path:'nagios_backup.tar')
+                    }
+                }
+            }
+        }  
+    
+    stage ('Delete local data') {
+        steps {
+            script {
+                echo 'Delete old data'
+                sh 'rm -rf *'
+                }
+            }
+        }
+    }
+}
